@@ -104,21 +104,41 @@ are discarded \(that is, the body is an implicit PROGN)."
                             `(let (,,@temps)
                               ,,@body))))))
 
+(defun sanitize-external-format-name% (name)
+  "Sanitizes NAME \(a symbol) by removing certain non-alphanumeric
+characters, e.g. :ISO-8859-1 will be converted to :ISO88591"
+  (macrolet ((-> (x &rest forms)
+               (if forms
+                   (if (cdr forms)
+                       `(-> (-> ,x ,(car forms)) ,@(cdr forms))
+                       `(,(caar forms) ,@(cdar forms) ,x))
+                   x)))
+    (intern (-> (symbol-name name)
+                (substitute #\- #\|)
+                (substitute #\- #\-)
+                (substitute #\- #\_)
+                (substitute #\- #\/)
+                (substitute #\- #\\)
+                (substitute #\- #\:))
+            "KEYWORD")))
+
 (defun normalize-external-format-name (name)
   "Converts NAME \(a symbol) to a `canonical' name for an
 external format, e.g. :LATIN1 will be converted to :ISO-8859-1.
 Also checks if there is an external format with that name and
 signals an error otherwise."
-  (let ((real-name (or (cdr (assoc name +name-map+
-                                   :test #'eq))
-                       name)))
-    (unless (find real-name +name-map+
-                  :test #'eq
-                  :key #'cdr)
+  (let* ((sanitized-name (sanitize-external-format-name% name))
+         (name-entry (or (find sanitized-name +name-map+
+                               :test #'eq
+                               :key #'car)
+                         (find sanitized-name +name-map+
+                               :test #'eq
+                               :key #'cdr))))    
+    (unless name-entry
       (error 'external-format-error
              :format-control "~S is not known to be a name for an external format."
-             :format-arguments (list name)))
-    real-name))
+             :format-arguments (list sanitized-name)))
+    (cdr name-entry)))
 
 (defun ascii-name-p (name)
   "Checks whether NAME is the keyword :ASCII."
